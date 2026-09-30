@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useCallback, useEffect } from "react";
 import { z } from "zod";
 import { format } from "date-fns";
 import type { ComponentDefinition, RenderContext, ValidationResult } from "@/types/components";
@@ -47,7 +47,7 @@ const num = (s: string): number | null => {
 };
 
 function LoggerView({ appId, config }: { appId: string; config: NumericLoggerConfig }) {
-  const today = format(new Date(), "yyyy-MM-dd");
+  const today = useMemo(() => format(new Date(), "yyyy-MM-dd"), []);
   const selectedKey = useUiStore((s) => s.selectedDate[appId] ?? today);
   const logs = useCollection(config.collection);
   const rawItems = useCollection(config.itemsCollection);
@@ -58,72 +58,93 @@ function LoggerView({ appId, config }: { appId: string; config: NumericLoggerCon
   const [newItem, setNewItem] = useState("");
 
   const hasItems = !!config.itemsCollection;
-  const extraFields = config.extraFields ?? [];
+  const extraFields = useMemo(() => config.extraFields ?? [], [config.extraFields]);
+  const itemTitleField = config.itemTitleField ?? "title";
+
+  // Fast O(1) title lookup map
+  const itemTitles = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const it of items) {
+      map.set(it.id, String(it.data[itemTitleField] ?? "?"));
+    }
+    return map;
+  }, [items, itemTitleField]);
 
   // Auto-select first item if none selected and items exist
-  React.useEffect(() => {
+  useEffect(() => {
     if (hasItems && items.length > 0 && !itemId) {
       setItemId(items[0].id);
     }
   }, [hasItems, items, itemId]);
 
-  const titleOf = (id: unknown) =>
-    String(items.find((i) => i.id === id)?.data[config.itemTitleField ?? "title"] ?? "?");
-
-  const addItem = async (e?: React.FormEvent) => {
-    if (e) e.preventDefault();
-    const t = newItem.trim();
-    if (!t || !config.itemsCollection) return;
-    const rec = await repo.create({
-      collectionId: config.itemsCollection,
-      data: { [config.itemTitleField ?? "title"]: t },
-    });
-    setNewItem("");
-    setItemId(rec.id);
-  };
+  const addItem = useCallback(
+    async (e?: React.FormEvent) => {
+      if (e) e.preventDefault();
+      const t = newItem.trim();
+      if (!t || !config.itemsCollection) return;
+      const rec = await repo.create({
+        collectionId: config.itemsCollection,
+        data: { [itemTitleField]: t },
+      });
+      setNewItem("");
+      setItemId(rec.id);
+    },
+    [newItem, config.itemsCollection, itemTitleField]
+  );
 
   const canLog = num(value) !== null && (!hasItems || !!itemId);
 
-  const log = async (e?: React.FormEvent) => {
-    if (e) e.preventDefault();
-    const v = num(value);
-    if (v === null || (hasItems && !itemId)) return;
-    const data: Record<string, unknown> = {
-      [config.dateField]: selectedKey,
-      [config.valueField]: v,
-    };
-    if (config.unitField && config.unit) data[config.unitField] = config.unit;
-    if (hasItems && config.itemField) data[config.itemField] = itemId;
-    for (const ef of extraFields) {
-      const n = num(extras[ef.field] ?? "");
-      if (n !== null) data[ef.field] = n;
-    }
-    await repo.create({ collectionId: config.collection, data });
-    setValue("");
-    setExtras({});
-  };
+  const log = useCallback(
+    async (e?: React.FormEvent) => {
+      if (e) e.preventDefault();
+      const v = num(value);
+      if (v === null || (hasItems && !itemId)) return;
+      const data: Record<string, unknown> = {
+        [config.dateField]: selectedKey,
+        [config.valueField]: v,
+      };
+      if (config.unitField && config.unit) data[config.unitField] = config.unit;
+      if (hasItems && config.itemField) data[config.itemField] = itemId;
+      for (const ef of extraFields) {
+        const n = num(extras[ef.field] ?? "");
+        if (n !== null) data[ef.field] = n;
+      }
+      await repo.create({ collectionId: config.collection, data });
+      setValue("");
+      setExtras({});
+    },
+    [value, hasItems, itemId, config.dateField, selectedKey, config.valueField, config.unitField, config.unit, config.itemField, extraFields, extras, config.collection]
+  );
 
-  const todays = logs.filter((l) => String(l.data[config.dateField] ?? "").startsWith(selectedKey));
+  const todays = useMemo(() => {
+    return logs.filter((l) => String(l.data[config.dateField] ?? "").startsWith(selectedKey));
+  }, [logs, config.dateField, selectedKey]);
 
-  const best =
-    config.showBest && hasItems && itemId && config.itemField
-      ? bestValue(logs, { itemField: config.itemField, itemId, valueField: config.valueField })
-      : null;
+  const best = useMemo(() => {
+    if (!config.showBest || !hasItems || !itemId || !config.itemField) return null;
+    return bestValue(logs, { itemField: config.itemField, itemId, valueField: config.valueField });
+  }, [config.showBest, hasItems, itemId, config.itemField, logs, config.valueField]);
 
-  const fmt = (l: RecordEntity) => {
-    const v = l.data[config.valueField];
-    const u = config.unitField ? l.data[config.unitField] : config.unit;
-    const ex = extraFields
-      .filter((ef) => l.data[ef.field] !== undefined)
-      .map((ef) => `${ef.label} ${l.data[ef.field]}`)
-      .join(" · ");
-    const head = hasItems && config.itemField ? `${titleOf(l.data[config.itemField])}: ` : "";
-    return `${head}${v}${u ? " " + u : ""}${ex ? " · " + ex : ""}`;
-  };
+  const fmt = useCallback(
+    (l: RecordEntity) => {
+      const v = l.data[config.valueField];
+      const u = config.unitField ? l.data[config.unitField] : config.unit;
+      const ex = extraFields
+        .filter((ef) => l.data[ef.field] !== undefined)
+        .map((ef) => `${ef.label} ${l.data[ef.field]}`)
+        .join(" · ");
+      const head =
+        hasItems && config.itemField
+          ? `${itemTitles.get(String(l.data[config.itemField])) ?? "?"}: `
+          : "";
+      return `${head}${v}${u ? " " + u : ""}${ex ? " · " + ex : ""}`;
+    },
+    [config.valueField, config.unitField, config.unit, extraFields, hasItems, config.itemField, itemTitles]
+  );
 
-  const deleteLog = async (id: string) => {
+  const deleteLog = useCallback(async (id: string) => {
     await repo.delete(id);
-  };
+  }, []);
 
   return (
     <div className="bg-white rounded-xl shadow-sm p-4 border border-gray-100">
@@ -140,13 +161,13 @@ function LoggerView({ appId, config }: { appId: string; config: NumericLoggerCon
                   key={it.id}
                   type="button"
                   onClick={() => setItemId(it.id)}
-                  className={`px-3 py-1.5 rounded-full text-xs font-medium transition-all ${
+                  className={`px-3 py-1.5 rounded-full text-xs font-medium transition-all cursor-pointer ${
                     isSelected
-                      ? "bg-[#4caf50] text-white shadow-sm font-semibold"
+                      ? "bg-[#4caf50] text-white shadow-2xs font-semibold"
                       : "bg-gray-100 text-gray-700 hover:bg-gray-200"
                   }`}
                 >
-                  {String(it.data[config.itemTitleField ?? "title"] ?? "")}
+                  {String(it.data[itemTitleField] ?? "")}
                 </button>
               );
             })}
@@ -162,7 +183,7 @@ function LoggerView({ appId, config }: { appId: string; config: NumericLoggerCon
             <button
               type="submit"
               disabled={!newItem.trim()}
-              className="px-3 py-1.5 rounded-lg bg-gray-200 hover:bg-gray-300 disabled:opacity-40 text-xs font-medium flex items-center gap-1 text-gray-700"
+              className="px-3 py-1.5 rounded-lg bg-gray-200 hover:bg-gray-300 disabled:opacity-40 text-xs font-medium flex items-center gap-1 text-gray-700 cursor-pointer"
             >
               <Plus size={14} /> Add
             </button>
@@ -202,7 +223,7 @@ function LoggerView({ appId, config }: { appId: string; config: NumericLoggerCon
         <button
           type="submit"
           disabled={!canLog}
-          className="bg-[#4caf50] hover:bg-green-600 disabled:opacity-50 text-white font-semibold text-sm px-4 py-2 rounded-lg transition-colors"
+          className="bg-[#4caf50] hover:bg-green-600 disabled:opacity-50 text-white font-semibold text-sm px-4 py-2 rounded-lg transition-colors cursor-pointer"
         >
           Log
         </button>
@@ -222,7 +243,7 @@ function LoggerView({ appId, config }: { appId: string; config: NumericLoggerCon
                 <button
                   type="button"
                   onClick={() => deleteLog(l.id)}
-                  className="opacity-0 group-hover:opacity-100 text-gray-400 hover:text-red-500 p-1 transition-opacity"
+                  className="opacity-0 group-hover:opacity-100 text-gray-400 hover:text-red-500 p-1 transition-opacity cursor-pointer"
                   title="Delete log entry"
                 >
                   <Trash2 size={14} />

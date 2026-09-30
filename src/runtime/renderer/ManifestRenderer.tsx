@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useMemo } from "react";
 import type { MiniAppManifest, PageDef } from "@/types/manifest";
 import { componentRegistry } from "@/runtime/registry/componentRegistry";
 import { validateManifest } from "@/lib/validation/manifest";
@@ -10,8 +10,10 @@ interface Props {
   pageId?: string;
 }
 
-export function ManifestRenderer({ manifest, pageId }: Props) {
-  const validation = validateManifest(manifest);
+export const ManifestRenderer = React.memo(function ManifestRenderer({ manifest, pageId }: Props) {
+  // Memoize manifest schema validation so it only executes when the manifest definition changes
+  const validation = useMemo(() => validateManifest(manifest), [manifest]);
+
   if (!validation.ok) {
     return (
       <div className="p-4 bg-red-50 border border-red-200 rounded-xl text-red-800 text-sm">
@@ -28,9 +30,9 @@ export function ManifestRenderer({ manifest, pageId }: Props) {
     );
   }
 
-  const page: PageDef | undefined = pageId
-    ? manifest.pages.find((p) => p.id === pageId)
-    : manifest.pages[0];
+  const page: PageDef | undefined = useMemo(() => {
+    return pageId ? manifest.pages.find((p) => p.id === pageId) : manifest.pages[0];
+  }, [manifest.pages, pageId]);
 
   if (!page) {
     return <div className="p-4 text-center text-gray-500">No page to render</div>;
@@ -55,10 +57,13 @@ export function ManifestRenderer({ manifest, pageId }: Props) {
             </div>
           );
         }
+
+        const scoped = scopeConfig(manifest.appId, c.config);
+
         return (
           <div key={c.id} className="component-wrap">
             {def.render({
-              config: scopeConfig(manifest.appId, c.config),
+              config: scoped,
               appId: manifest.appId,
             })}
           </div>
@@ -66,4 +71,4 @@ export function ManifestRenderer({ manifest, pageId }: Props) {
       })}
     </div>
   );
-}
+});

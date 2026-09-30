@@ -1,31 +1,26 @@
-import { useEffect, useState, useCallback } from "react";
+import { useSyncExternalStore, useCallback } from "react";
 import type { RecordEntity } from "@/domain/entities";
 import { sqliteRecordRepository } from "@/db/repositories/recordRepository";
-import { eventBus } from "@/domain/events/bus";
 
-// Live records of one collection. Pass undefined for "no collection".
+const EMPTY_RECORDS: RecordEntity[] = [];
+
+/**
+ * High-performance reactive hook powered by useSyncExternalStore.
+ * Returns referentially-stable snapshots of collection records with O(1) retrieval.
+ */
 export function useCollection(collectionId?: string): RecordEntity[] {
-  const [records, setRecords] = useState<RecordEntity[]>([]);
+  const subscribe = useCallback(
+    (onStoreChange: () => void) => {
+      if (!collectionId) return () => {};
+      return sqliteRecordRepository.subscribe(collectionId, onStoreChange);
+    },
+    [collectionId]
+  );
 
-  const reload = useCallback(async () => {
-    if (!collectionId) {
-      setRecords([]);
-      return;
-    }
-    setRecords(await sqliteRecordRepository.list({ collectionId }));
+  const getSnapshot = useCallback((): RecordEntity[] => {
+    if (!collectionId) return EMPTY_RECORDS;
+    return sqliteRecordRepository.getCollectionSnapshot(collectionId);
   }, [collectionId]);
 
-  useEffect(() => {
-    reload();
-    return eventBus.subscribe((evt) => {
-      if (
-        (evt.type === "record.created" || evt.type === "record.updated" || evt.type === "record.deleted") &&
-        evt.entityType === collectionId
-      ) {
-        reload();
-      }
-    });
-  }, [reload, collectionId]);
-
-  return records;
+  return useSyncExternalStore(subscribe, getSnapshot, () => EMPTY_RECORDS);
 }

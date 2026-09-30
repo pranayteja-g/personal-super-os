@@ -1,6 +1,5 @@
-import React from "react";
+import React, { useMemo } from "react";
 import { z } from "zod";
-import { parseISO } from "date-fns";
 import type { ComponentDefinition, RenderContext, ValidationResult } from "@/types/components";
 import { useCollection } from "@/runtime/hooks/useCollection";
 import { computeDailyStreak } from "@/lib/dates/streak";
@@ -24,12 +23,14 @@ const StreakConfigSchema = z.object({
 
 function StreakView({ config }: { config: StreakConfig }) {
   const rows = useCollection(config.collection);
-  const dates = rows
-    .filter((r) => r.data[config.successField] === config.successValue)
-    .map((r) => (config.dateField ? r.data[config.dateField] : r.updatedAt))
-    .filter((v): v is string => typeof v === "string" && v.length > 0)
-    .map((v) => parseISO(v));
-  const streak = computeDailyStreak(dates);
+
+  const streak = useMemo(() => {
+    const dates = rows
+      .filter((r) => r.data[config.successField] === config.successValue)
+      .map((r) => (config.dateField ? r.data[config.dateField] : r.updatedAt))
+      .filter((v): v is string => typeof v === "string" && v.length >= 10);
+    return computeDailyStreak(dates);
+  }, [rows, config.successField, config.successValue, config.dateField]);
 
   return (
     <div className="bg-white rounded-xl shadow-sm p-5 border border-gray-100 flex flex-col items-center justify-center text-center">

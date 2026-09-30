@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useMemo } from "react";
 import { z } from "zod";
 import { format, addDays, startOfWeek, parseISO } from "date-fns";
 import type { ComponentDefinition, RenderContext, ValidationResult } from "@/types/components";
@@ -8,7 +8,7 @@ import { useCollection } from "@/runtime/hooks/useCollection";
 export interface CalendarConfig {
   collection: string;
   dateField: string;
-  showRecords?: boolean; // default true; false = date picker only
+  showRecords?: boolean;
 }
 
 const CalendarConfigSchema = z.object({
@@ -18,17 +18,21 @@ const CalendarConfigSchema = z.object({
 });
 
 function CalendarView({ appId, config }: { appId: string; config: CalendarConfig }) {
-  const today = format(new Date(), "yyyy-MM-dd");
+  const today = useMemo(() => format(new Date(), "yyyy-MM-dd"), []);
   const selectedKey = useUiStore((s) => s.selectedDate[appId] ?? today);
   const setSelectedDate = useUiStore((s) => s.setSelectedDate);
   const showRecords = config.showRecords !== false;
   const all = useCollection(config.collection);
-  const records = showRecords
-    ? all.filter((r) => String(r.data[config.dateField] ?? "").startsWith(selectedKey))
-    : [];
 
-  const weekStart = startOfWeek(parseISO(selectedKey));
-  const week = Array.from({ length: 7 }, (_, i) => addDays(weekStart, i));
+  const records = useMemo(() => {
+    if (!showRecords) return [];
+    return all.filter((r) => String(r.data[config.dateField] ?? "").startsWith(selectedKey));
+  }, [all, showRecords, config.dateField, selectedKey]);
+
+  const week = useMemo(() => {
+    const weekStart = startOfWeek(parseISO(selectedKey));
+    return Array.from({ length: 7 }, (_, i) => addDays(weekStart, i));
+  }, [selectedKey]);
 
   return (
     <div className="bg-white rounded-xl shadow-sm p-4 border border-gray-100">
@@ -42,7 +46,7 @@ function CalendarView({ appId, config }: { appId: string; config: CalendarConfig
               key={k}
               type="button"
               onClick={() => setSelectedDate(appId, k)}
-              className={`flex flex-col items-center justify-center w-10 py-1.5 rounded-xl transition-all ${
+              className={`flex flex-col items-center justify-center w-10 py-1.5 rounded-xl transition-all cursor-pointer ${
                 isSelected
                   ? "bg-[#4caf50] text-white shadow-sm font-bold"
                   : "text-gray-700 hover:bg-gray-100"

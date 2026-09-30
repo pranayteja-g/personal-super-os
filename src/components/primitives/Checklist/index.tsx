@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useCallback } from "react";
 import { z } from "zod";
 import { format } from "date-fns";
 import type { ComponentDefinition, RenderContext, ValidationResult } from "@/types/components";
@@ -7,7 +7,6 @@ import { sqliteRecordRepository as repo } from "@/db/repositories/recordReposito
 import { useUiStore } from "@/store/uiStore";
 import { computeDailyStreak } from "@/lib/dates/streak";
 import { useCollection } from "@/runtime/hooks/useCollection";
-import { findLog, doneDates } from "@/domain/queries/logs";
 import { Check, Plus, Trash2, Flame } from "lucide-react";
 
 export interface ChecklistConfig {
@@ -33,7 +32,7 @@ const ChecklistConfigSchema = z.object({
 });
 
 function ChecklistView({ appId, config }: { appId: string; config: ChecklistConfig }) {
-  const today = format(new Date(), "yyyy-MM-dd");
+  const today = useMemo(() => format(new Date(), "yyyy-MM-dd"), []);
   const selectedKey = useUiStore((s) => s.selectedDate[appId] ?? today);
   const rawItems = useCollection(config.itemsCollection);
   const logs = useCollection(config.logsCollection);
@@ -43,58 +42,93 @@ function ChecklistView({ appId, config }: { appId: string; config: ChecklistConf
   const done = config.doneValue ?? "completed";
   const notStarted = config.notStartedValue ?? "not_started";
 
-  const logOn = (itemId: string): RecordEntity | undefined =>
-    findLog(logs, {
-      itemField: config.logItemField,
-      itemId,
-      dateField: config.logDateField,
-      date: selectedKey,
-    });
-
-  const isDoneOn = (itemId: string) => logOn(itemId)?.data[config.logStatusField] === done;
-
-  const streakFor = (itemId: string) =>
-    computeDailyStreak(
-      doneDates(logs, {
-        itemField: config.logItemField,
-        itemId,
-        dateField: config.logDateField,
-        statusField: config.logStatusField,
-        doneValue: done,
-      })
-    );
-
-  const addItem = async (e?: React.FormEvent) => {
-    if (e) e.preventDefault();
-    const title = draft.trim();
-    if (!title) return;
-    await repo.create({ collectionId: config.itemsCollection, data: { [config.itemTitleField]: title } });
-    setDraft("");
-  };
-
-  const toggle = async (item: RecordEntity) => {
-    const existing = logOn(item.id);
-    if (existing) {
-      const isDone = existing.data[config.logStatusField] === done;
-      await repo.update(existing.id, { data: { [config.logStatusField]: isDone ? notStarted : done } });
-    } else {
-      await repo.create({
-        collectionId: config.logsCollection,
-        data: {
-          [config.logItemField]: item.id,
-          [config.logDateField]: selectedKey,
-          [config.logStatusField]: done,
-        },
-      });
+  // O(L) single-pass lookup index for the selected date's logs
+  const selectedDayLogByItem = useMemo(() => {
+    const map = new Map<string, RecordEntity>();
+    for (const log of logs) {
+      const dateVal = String(log.data[config.logDateField] ?? "");
+      if (dateVal.startsWith(selectedKey)) {
+        const itemId = String(log.data[config.logItemField] ?? "");
+        if (itemId) map.set(itemId, log);
+      }
     }
-  };
+    return map;
+  }, [logs, config.logDateField, selectedKey, config.logItemField]);
 
-  const deleteItem = async (e: React.MouseEvent, id: string) => {
+  // O(L) single-pass grouped streaks per habit item
+  const streaksByItem = useMemo(() => {
+    const datesMap = new Map<string, string[]>();
+    for (const log of logs) {
+      if (log.data[config.logStatusField] === done) {
+        const itemId = String(log.data[config.logItemField] ?? "");
+        const rawDate = log.data[config.logDateField];
+        if (itemId && typeof rawDate === "string" && rawDate.length >= 10) {
+          let arr = datesMap.get(itemId);
+          if (!arr) {
+            arr = [];
+            datesMap.set(itemId, arr);
+          }
+          arr.push(rawDate.slice(0, 10));
+        }
+      }
+    }
+
+    const streakMap = new Map<string, number>();
+    for (const [itemId, dates] of datesMap.entries()) {
+      streakMap.set(itemId, computeDailyStreak(dates));
+    }
+    return streakMap;
+  }, [logs, config.logStatusField, done, config.logItemField, config.logDateField]);
+
+  const addItem = useCallback(
+    async (e?: React.FormEvent) => {
+      if (e) e.preventDefault();
+      const title = draft.trim();
+      if (!title) return;
+      await repo.create({
+        collectionId: config.itemsCollection,
+        data: { [config.itemTitleField]: title },
+      });
+      setDraft("");
+    },
+    [draft, config.itemsCollection, config.itemTitleField]
+  );
+
+  const toggle = useCallback(
+    async (item: RecordEntity) => {
+      const existing = selectedDayLogByItem.get(item.id);
+      if (existing) {
+        const isDone = existing.data[config.logStatusField] === done;
+        await repo.update(existing.id, {
+          data: { [config.logStatusField]: isDone ? notStarted : done },
+        });
+      } else {
+        await repo.create({
+          collectionId: config.logsCollection,
+          data: {
+            [config.logItemField]: item.id,
+            [config.logDateField]: selectedKey,
+            [config.logStatusField]: done,
+          },
+        });
+      }
+    },
+    [selectedDayLogByItem, config.logStatusField, done, notStarted, config.logsCollection, config.logItemField, selectedKey]
+  );
+
+  const deleteItem = useCallback(async (e: React.MouseEvent, id: string) => {
     e.stopPropagation();
     await repo.delete(id);
-  };
+  }, []);
 
-  const doneCount = items.filter((it) => isDoneOn(it.id)).length;
+  const doneCount = useMemo(() => {
+    let count = 0;
+    for (const item of items) {
+      const log = selectedDayLogByItem.get(item.id);
+      if (log?.data[config.logStatusField] === done) count++;
+    }
+    return count;
+  }, [items, selectedDayLogByItem, config.logStatusField, done]);
 
   return (
     <div className="bg-white rounded-xl shadow-sm p-4 border border-gray-100">
@@ -109,7 +143,7 @@ function ChecklistView({ appId, config }: { appId: string; config: ChecklistConf
         <button
           type="submit"
           disabled={!draft.trim()}
-          className="w-9 h-9 rounded-full bg-[#4caf50] hover:bg-green-600 disabled:opacity-50 text-white flex items-center justify-center transition-colors flex-shrink-0"
+          className="w-9 h-9 rounded-full bg-[#4caf50] hover:bg-green-600 disabled:opacity-50 text-white flex items-center justify-center transition-colors flex-shrink-0 cursor-pointer"
           title="Add"
         >
           <Plus size={18} />
@@ -125,8 +159,10 @@ function ChecklistView({ appId, config }: { appId: string; config: ChecklistConf
       ) : (
         <div className="divide-y divide-gray-100">
           {items.map((item) => {
-            const isDone = isDoneOn(item.id);
-            const streak = streakFor(item.id);
+            const log = selectedDayLogByItem.get(item.id);
+            const isDone = log?.data[config.logStatusField] === done;
+            const streak = streaksByItem.get(item.id) ?? 0;
+
             return (
               <div
                 key={item.id}
@@ -158,7 +194,7 @@ function ChecklistView({ appId, config }: { appId: string; config: ChecklistConf
                 <button
                   type="button"
                   onClick={(e) => deleteItem(e, item.id)}
-                  className="opacity-0 group-hover:opacity-100 text-gray-400 hover:text-red-500 p-1 transition-opacity"
+                  className="opacity-0 group-hover:opacity-100 text-gray-400 hover:text-red-500 p-1 transition-opacity cursor-pointer"
                   title="Delete habit"
                 >
                   <Trash2 size={15} />

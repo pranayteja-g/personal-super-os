@@ -1,16 +1,15 @@
-import React from "react";
+import React, { useState, useMemo } from "react";
 import { useAppStore } from "@/store/appStore";
 import type { MiniApp } from "@/domain/entities";
+import { AppIcon } from "@/components/ui/AppIcon";
 import {
-  CalendarCheck,
-  Repeat,
-  BookOpen,
-  Dumbbell,
   Layers,
   Plus,
   Trash2,
   ChevronRight,
   Sparkles,
+  AlertTriangle,
+  RotateCcw,
 } from "lucide-react";
 
 interface Props {
@@ -18,31 +17,29 @@ interface Props {
   onOpenBuilder: () => void;
 }
 
-function getAppIcon(iconName?: string) {
-  switch (iconName) {
-    case "calendar-check":
-      return <CalendarCheck className="w-5 h-5 text-blue-500" />;
-    case "repeat":
-      return <Repeat className="w-5 h-5 text-green-500" />;
-    case "book":
-      return <BookOpen className="w-5 h-5 text-purple-500" />;
-    case "dumbbell":
-      return <Dumbbell className="w-5 h-5 text-orange-500" />;
-    default:
-      return <Layers className="w-5 h-5 text-emerald-500" />;
-  }
-}
-
 export function HomeView({ onOpenApp, onOpenBuilder }: Props) {
   const apps = useAppStore((s) => s.apps);
   const deleteApp = useAppStore((s) => s.deleteApp);
+  const restoreDefaults = useAppStore((s) => s.restoreDefaults);
 
-  const builtInIds = new Set([
-    "app_day_planner",
-    "app_habit_hub",
-    "app_reading_log",
-    "app_workout_tracker",
-  ]);
+  const [appToDelete, setAppToDelete] = useState<MiniApp | null>(null);
+
+  const builtInIds = useMemo(
+    () =>
+      new Set([
+        "app_day_planner",
+        "app_habit_hub",
+        "app_reading_log",
+        "app_workout_tracker",
+      ]),
+    []
+  );
+
+  const confirmDelete = async () => {
+    if (!appToDelete) return;
+    await deleteApp(appToDelete.id);
+    setAppToDelete(null);
+  };
 
   return (
     <div className="space-y-6">
@@ -57,7 +54,7 @@ export function HomeView({ onOpenApp, onOpenBuilder }: Props) {
         <button
           type="button"
           onClick={onOpenBuilder}
-          className="flex items-center gap-1.5 bg-[#4caf50] hover:bg-green-600 text-white font-semibold text-sm px-4 py-2 rounded-full shadow-sm transition-all hover:shadow active:scale-95"
+          className="flex items-center gap-1.5 bg-[#4caf50] hover:bg-green-600 text-white font-semibold text-sm px-4 py-2 rounded-full shadow-sm transition-all hover:shadow active:scale-95 cursor-pointer"
         >
           <Plus size={16} strokeWidth={2.5} />
           <span>New</span>
@@ -77,7 +74,7 @@ export function HomeView({ onOpenApp, onOpenBuilder }: Props) {
             >
               <div className="flex items-center gap-3.5">
                 <div className="w-11 h-11 rounded-xl bg-gray-100 flex items-center justify-center flex-shrink-0 group-hover:bg-white group-hover:shadow-sm transition-all">
-                  {getAppIcon(app.icon)}
+                  <AppIcon name={app.icon} />
                 </div>
                 <div>
                   <div className="flex items-center gap-2">
@@ -98,22 +95,19 @@ export function HomeView({ onOpenApp, onOpenBuilder }: Props) {
                 </div>
               </div>
 
-              <div className="flex items-center gap-2">
-                {!isBuiltIn && (
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      if (confirm(`Delete mini-app "${app.name}"?`)) {
-                        deleteApp(app.id);
-                      }
-                    }}
-                    className="opacity-0 group-hover:opacity-100 text-gray-400 hover:text-red-500 p-2 rounded-lg transition-all"
-                    title="Delete app"
-                  >
-                    <Trash2 size={16} />
-                  </button>
-                )}
+              <div className="flex items-center gap-1">
+                {/* Delete button (now available for any app, with in-app confirmation modal) */}
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setAppToDelete(app);
+                  }}
+                  className="text-gray-400 hover:text-red-500 hover:bg-red-50 p-2 rounded-lg transition-colors cursor-pointer"
+                  title={`Delete ${app.name}`}
+                >
+                  <Trash2 size={16} />
+                </button>
                 <ChevronRight className="w-5 h-5 text-gray-400 group-hover:translate-x-0.5 transition-transform" />
               </div>
             </div>
@@ -122,9 +116,85 @@ export function HomeView({ onOpenApp, onOpenBuilder }: Props) {
       </div>
 
       {apps.length === 0 && (
-        <div className="text-center py-12 bg-white rounded-2xl border border-gray-200 p-6">
-          <Layers className="w-12 h-12 text-gray-300 mx-auto mb-3" />
-          <p className="text-gray-500 text-sm">Loading mini-apps...</p>
+        <div className="text-center py-12 bg-white rounded-2xl border border-gray-200 p-6 space-y-3">
+          <Layers className="w-12 h-12 text-gray-300 mx-auto" />
+          <p className="text-gray-700 font-semibold text-sm">No mini-apps yet</p>
+          <p className="text-gray-400 text-xs">
+            Create your first custom mini-app or restore built-in apps.
+          </p>
+          <div className="flex justify-center gap-2 pt-2">
+            <button
+              type="button"
+              onClick={onOpenBuilder}
+              className="bg-[#4caf50] text-white px-4 py-2 rounded-xl text-xs font-semibold hover:bg-green-600 transition-colors"
+            >
+              + Create App
+            </button>
+            <button
+              type="button"
+              onClick={() => restoreDefaults()}
+              className="border border-gray-300 text-gray-700 px-4 py-2 rounded-xl text-xs font-semibold hover:bg-gray-50 transition-colors"
+            >
+              Restore Built-in Apps
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Restore defaults button at bottom if any were deleted */}
+      {apps.length > 0 && apps.length < 4 && (
+        <div className="text-center pt-2">
+          <button
+            type="button"
+            onClick={() => restoreDefaults()}
+            className="text-xs text-gray-500 hover:text-gray-800 flex items-center gap-1.5 mx-auto py-1 px-3 rounded-full hover:bg-gray-200/60 transition-colors"
+          >
+            <RotateCcw size={12} /> Restore Default Apps
+          </button>
+        </div>
+      )}
+
+      {/* In-App Delete Confirmation Modal (NO window.confirm) */}
+      {appToDelete && (
+        <div
+          className="fixed inset-0 z-50 bg-black/40 backdrop-blur-xs flex items-center justify-center p-4"
+          onClick={() => setAppToDelete(null)}
+        >
+          <div
+            className="bg-white rounded-2xl max-w-sm w-full p-5 shadow-xl border border-gray-200 space-y-4 animate-in fade-in zoom-in-95 duration-150"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center gap-3 text-red-600">
+              <div className="w-10 h-10 rounded-full bg-red-100 flex items-center justify-center flex-shrink-0">
+                <AlertTriangle size={20} />
+              </div>
+              <div>
+                <h3 className="font-bold text-gray-900 text-base">Delete Mini-App</h3>
+                <p className="text-xs text-gray-500">This action removes the app definition.</p>
+              </div>
+            </div>
+
+            <p className="text-xs text-gray-600">
+              Are you sure you want to delete <span className="font-semibold text-gray-900">"{appToDelete.name}"</span>?
+            </p>
+
+            <div className="flex gap-2.5 pt-2">
+              <button
+                type="button"
+                onClick={() => setAppToDelete(null)}
+                className="flex-1 py-2.5 border border-gray-300 rounded-xl text-xs font-semibold text-gray-700 hover:bg-gray-50 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={confirmDelete}
+                className="flex-1 py-2.5 bg-red-600 hover:bg-red-700 text-white rounded-xl text-xs font-bold transition-colors shadow-sm"
+              >
+                Delete
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>

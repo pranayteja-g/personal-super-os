@@ -2,20 +2,30 @@ import type { MiniApp } from "@/domain/entities";
 import { eventBus } from "@/domain/events/bus";
 
 const STORAGE_KEY = "personal_super_os_apps";
+const DELETED_KEY = "personal_super_os_deleted_apps";
 
 class MiniAppRepository {
   private apps: Map<string, MiniApp> = new Map();
+  private deletedIds: Set<string> = new Set();
   private loaded = false;
 
   private load(): void {
     if (this.loaded) return;
     try {
       if (typeof window !== "undefined" && window.localStorage) {
+        const delRaw = window.localStorage.getItem(DELETED_KEY);
+        if (delRaw) {
+          const list: string[] = JSON.parse(delRaw);
+          this.deletedIds = new Set(list);
+        }
+
         const raw = window.localStorage.getItem(STORAGE_KEY);
         if (raw) {
           const list: MiniApp[] = JSON.parse(raw);
           for (const item of list) {
-            this.apps.set(item.id, item);
+            if (!this.deletedIds.has(item.id)) {
+              this.apps.set(item.id, item);
+            }
           }
         }
       }
@@ -30,10 +40,16 @@ class MiniAppRepository {
       if (typeof window !== "undefined" && window.localStorage) {
         const list = Array.from(this.apps.values());
         window.localStorage.setItem(STORAGE_KEY, JSON.stringify(list));
+        window.localStorage.setItem(DELETED_KEY, JSON.stringify(Array.from(this.deletedIds)));
       }
     } catch (e) {
       console.warn("Could not persist apps to localStorage:", e);
     }
+  }
+
+  isDeleted(id: string): boolean {
+    this.load();
+    return this.deletedIds.has(id);
   }
 
   async list(): Promise<MiniApp[]> {
@@ -48,6 +64,7 @@ class MiniAppRepository {
 
   async save(app: MiniApp): Promise<void> {
     this.load();
+    this.deletedIds.delete(app.id);
     const isNew = !this.apps.has(app.id);
     this.apps.set(app.id, app);
     this.persist();
@@ -56,12 +73,17 @@ class MiniAppRepository {
 
   async delete(id: string): Promise<boolean> {
     this.load();
-    const exists = this.apps.has(id);
-    if (!exists) return false;
+    this.deletedIds.add(id);
     this.apps.delete(id);
     this.persist();
     eventBus.emit({ type: "app.deleted", id });
     return true;
+  }
+
+  async restoreAll(): Promise<void> {
+    this.load();
+    this.deletedIds.clear();
+    this.persist();
   }
 }
 

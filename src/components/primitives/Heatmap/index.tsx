@@ -27,10 +27,8 @@ const HeatmapConfigSchema = z.object({
 
 const SHADES = ["#ebedf0", "#c6e48b", "#7bc96f", "#239a3b", "#196127"];
 
-const key = (d: Date) => format(d, "yyyy-MM-dd");
-
 function HeatmapView({ appId, config }: { appId: string; config: HeatmapConfig }) {
-  const todayKey = key(new Date());
+  const todayKey = useMemo(() => format(new Date(), "yyyy-MM-dd"), []);
   const selectedKey = useUiStore((s) => s.selectedDate[appId] ?? todayKey);
   const setSelectedDate = useUiStore((s) => s.setSelectedDate);
   const rows = useCollection(config.collection);
@@ -49,14 +47,21 @@ function HeatmapView({ appId, config }: { appId: string; config: HeatmapConfig }
     return next;
   }, [rows, config.dateField, config.successField, config.successValue, config.itemField, config.itemValue]);
 
+  // Pre-compute columns with keys so format() is never called inside the render loop
   const columns = useMemo(() => {
     const start = subWeeks(startOfWeek(new Date()), weeks - 1);
     return Array.from({ length: weeks }, (_, w) =>
-      Array.from({ length: 7 }, (_, d) => addDays(start, w * 7 + d))
+      Array.from({ length: 7 }, (_, d) => {
+        const dateObj = addDays(start, w * 7 + d);
+        return {
+          date: dateObj,
+          key: format(dateObj, "yyyy-MM-dd"),
+        };
+      })
     );
   }, [weeks]);
 
-  const max = Math.max(1, ...Object.values(counts));
+  const max = useMemo(() => Math.max(1, ...Object.values(counts)), [counts]);
   const level = (n: number) => (n <= 0 ? 0 : Math.min(4, Math.ceil((n / max) * 4)));
 
   return (
@@ -65,8 +70,8 @@ function HeatmapView({ appId, config }: { appId: string; config: HeatmapConfig }
         <div className="flex gap-[3px]">
           {columns.map((col, w) => (
             <div key={w} className="flex flex-col gap-[3px]">
-              {col.map((d) => {
-                const k = key(d);
+              {col.map((cell) => {
+                const k = cell.key;
                 const future = k > todayKey;
                 const n = counts[k] ?? 0;
                 const isSelected = k === selectedKey;
