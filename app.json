@@ -1,0 +1,17 @@
+{
+  "expo": {
+    "name": "Personal Super App",
+    "slug": "personal-super-app",
+    "scheme": "supapp",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "plugins": [
+      "expo-router",
+      "expo-sqlite"
+    ],
+    "ios": {
+      "supportsTablet": true
+    },
+    "android": {}
+  }
+}
