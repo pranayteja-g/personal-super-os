@@ -1,33 +1,30 @@
 {
-  "name": "personal-super-app",
+  "name": "personal-super-os",
+  "private": true,
   "version": "1.0.0",
-  "main": "expo-router/entry",
+  "type": "module",
   "scripts": {
-    "start": "expo start",
-    "android": "expo start --android",
-    "ios": "expo start --ios",
-    "test": "vitest run",
-    "typecheck": "tsc --noEmit"
+    "dev": "vite --host 0.0.0.0 --port 3000",
+    "build": "tsc && vite build",
+    "preview": "vite preview --port 3000",
+    "lint": "tsc --noEmit"
   },
   "dependencies": {
-    "@types/react": "~19.2.4",
     "date-fns": "^3.6.0",
-    "expo": "~57.0.26",
-    "expo-constants": "~57.0.19",
-    "expo-linking": "~57.0.11",
-    "expo-router": "~57.0.23",
-    "expo-sqlite": "~57.0.3",
-    "react": "19.2.3",
-    "react-native": "0.86.3",
-    "react-native-safe-area-context": "~5.7.0",
-    "react-native-screens": "~4.26.0",
-    "zod": "^3.23.0",
-    "zustand": "^4.5.0"
+    "lucide-react": "^0.469.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "zod": "^3.23.8",
+    "zustand": "^4.5.2"
   },
   "devDependencies": {
-    "@types/react": "~18.2.0",
-    "typescript": "^5.4.0",
-    "vitest": "^1.6.1"
-  },
-  "private": true
+    "@tailwindcss/vite": "^4.0.0",
+    "@types/node": "^22.10.2",
+    "@types/react": "^18.3.18",
+    "@types/react-dom": "^18.3.5",
+    "@vitejs/plugin-react": "^4.3.4",
+    "tailwindcss": "^4.0.0",
+    "typescript": "^5.7.2",
+    "vite": "^6.0.7"
+  }
 }

@@ -1,5 +1,4 @@
 import React, { useMemo } from "react";
-import { View, Text, Pressable, StyleSheet } from "react-native";
 import { z } from "zod";
 import { format, addDays, startOfWeek, subWeeks } from "date-fns";
 import type { ComponentDefinition, RenderContext, ValidationResult } from "@/types/components";
@@ -9,11 +8,11 @@ import { useCollection } from "@/runtime/hooks/useCollection";
 export interface HeatmapConfig {
   collection: string;
   dateField: string;
-  successField?: string; // count only records where field == successValue
+  successField?: string;
   successValue?: string;
-  itemField?: string; // optional filter, e.g. one habit
+  itemField?: string;
   itemValue?: string;
-  weeks?: number; // default 12
+  weeks?: number;
 }
 
 const HeatmapConfigSchema = z.object({
@@ -27,13 +26,9 @@ const HeatmapConfigSchema = z.object({
 });
 
 const SHADES = ["#ebedf0", "#c6e48b", "#7bc96f", "#239a3b", "#196127"];
-const CELL = 18;
-const GAP = 3;
-
-const key = (d: Date) => format(d, "yyyy-MM-dd");
 
 function HeatmapView({ appId, config }: { appId: string; config: HeatmapConfig }) {
-  const todayKey = key(new Date());
+  const todayKey = useMemo(() => format(new Date(), "yyyy-MM-dd"), []);
   const selectedKey = useUiStore((s) => s.selectedDate[appId] ?? todayKey);
   const setSelectedDate = useUiStore((s) => s.setSelectedDate);
   const rows = useCollection(config.collection);
@@ -52,46 +47,59 @@ function HeatmapView({ appId, config }: { appId: string; config: HeatmapConfig }
     return next;
   }, [rows, config.dateField, config.successField, config.successValue, config.itemField, config.itemValue]);
 
+  // Pre-compute columns with keys so format() is never called inside the render loop
   const columns = useMemo(() => {
     const start = subWeeks(startOfWeek(new Date()), weeks - 1);
     return Array.from({ length: weeks }, (_, w) =>
-      Array.from({ length: 7 }, (_, d) => addDays(start, w * 7 + d))
+      Array.from({ length: 7 }, (_, d) => {
+        const dateObj = addDays(start, w * 7 + d);
+        return {
+          date: dateObj,
+          key: format(dateObj, "yyyy-MM-dd"),
+        };
+      })
     );
   }, [weeks]);
 
-  const max = Math.max(1, ...Object.values(counts));
+  const max = useMemo(() => Math.max(1, ...Object.values(counts)), [counts]);
   const level = (n: number) => (n <= 0 ? 0 : Math.min(4, Math.ceil((n / max) * 4)));
 
   return (
-    <View>
-      <View style={styles.grid}>
-        {columns.map((col, w) => (
-          <View key={w} style={styles.col}>
-            {col.map((d) => {
-              const k = key(d);
-              const future = k > todayKey;
-              const n = counts[k] ?? 0;
-              return (
-                <Pressable
-                  key={k}
-                  disabled={future}
-                  onPress={() => setSelectedDate(appId, k)}
-                  style={[
-                    styles.cell,
-                    { backgroundColor: SHADES[level(n)] },
-                    future && styles.future,
-                    k === selectedKey && styles.selected,
-                  ]}
-                />
-              );
-            })}
-          </View>
-        ))}
-      </View>
-      <Text style={styles.caption}>
-        {selectedKey}: {counts[selectedKey] ?? 0}
-      </Text>
-    </View>
+    <div className="bg-white rounded-xl shadow-sm p-4 border border-gray-100 flex flex-col items-center">
+      <div className="overflow-x-auto max-w-full pb-2">
+        <div className="flex gap-[3px]">
+          {columns.map((col, w) => (
+            <div key={w} className="flex flex-col gap-[3px]">
+              {col.map((cell) => {
+                const k = cell.key;
+                const future = k > todayKey;
+                const n = counts[k] ?? 0;
+                const isSelected = k === selectedKey;
+                return (
+                  <button
+                    key={k}
+                    type="button"
+                    disabled={future}
+                    onClick={() => setSelectedDate(appId, k)}
+                    title={`${k}: ${n} activity`}
+                    style={{ backgroundColor: SHADES[level(n)] }}
+                    className={`w-[18px] h-[18px] rounded-[3px] transition-all cursor-pointer ${
+                      future ? "opacity-25 cursor-not-allowed" : "hover:scale-110"
+                    } ${
+                      isSelected ? "ring-2 ring-gray-900 ring-offset-1 z-10 scale-105" : ""
+                    }`}
+                  />
+                );
+              })}
+            </div>
+          ))}
+        </div>
+      </div>
+      <div className="text-xs text-gray-500 font-medium mt-1 flex items-center justify-between w-full px-2">
+        <span>{selectedKey}</span>
+        <span className="font-semibold text-gray-700">{counts[selectedKey] ?? 0} activity</span>
+      </div>
+    </div>
   );
 }
 
@@ -113,12 +121,3 @@ export const HeatmapComponent: ComponentDefinition<HeatmapConfig> = {
     return [];
   },
 };
-
-const styles = StyleSheet.create({
-  grid: { flexDirection: "row", alignSelf: "center" },
-  col: { marginRight: GAP },
-  cell: { width: CELL, height: CELL, borderRadius: 3, marginBottom: GAP },
-  future: { opacity: 0.25 },
-  selected: { borderWidth: 2, borderColor: "#333" },
-  caption: { textAlign: "center", color: "#888", fontSize: 12, marginTop: 4 },
-});

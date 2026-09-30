@@ -11,6 +11,8 @@ interface AppStoreState {
   ready: boolean;
   init: () => Promise<void>;
   refresh: () => Promise<void>;
+  deleteApp: (id: string) => Promise<void>;
+  restoreDefaults: () => Promise<void>;
 }
 
 const BUILT_INS = [
@@ -20,12 +22,12 @@ const BUILT_INS = [
   workoutTrackerManifest,
 ];
 
-// Upsert built-in manifests on every boot so manifest edits take effect.
-// Only mini_apps rows are touched, never user records. Builder-created apps
-// are untouched here — they live in the same table, just never reseeded.
-async function seedBuiltIns(): Promise<void> {
+async function seedBuiltIns(force: boolean = false): Promise<void> {
   const now = new Date().toISOString();
   for (const manifest of BUILT_INS) {
+    if (!force && sqliteMiniAppRepository.isDeleted(manifest.appId)) {
+      continue;
+    }
     const existing = await sqliteMiniAppRepository.getById(manifest.appId);
     await sqliteMiniAppRepository.save({
       id: manifest.appId,
@@ -44,13 +46,22 @@ export const useAppStore = create<AppStoreState>((set) => ({
   apps: [],
   ready: false,
   init: async () => {
-    await seedBuiltIns();
+    await seedBuiltIns(false);
     const apps = await sqliteMiniAppRepository.list();
     set({ apps, ready: true });
   },
-  // Call after the Builder saves a new/edited app, so Home picks it up
-  // without reseeding the built-ins.
   refresh: async () => {
+    const apps = await sqliteMiniAppRepository.list();
+    set({ apps });
+  },
+  deleteApp: async (id: string) => {
+    await sqliteMiniAppRepository.delete(id);
+    const apps = await sqliteMiniAppRepository.list();
+    set({ apps });
+  },
+  restoreDefaults: async () => {
+    await sqliteMiniAppRepository.restoreAll();
+    await seedBuiltIns(true);
     const apps = await sqliteMiniAppRepository.list();
     set({ apps });
   },
