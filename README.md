@@ -1,28 +1,19 @@
-# Personal Super-App — First Sprint Scaffold
+# Personal Super OS
 
-Implements spec §22 (First Sprint) + §25 (proof goal): one engine driving
-Day Planner and Habit Hub from the same manifest/renderer/List/Calendar/Streak.
+A personal super-app engine driving Day Planner, Habit Hub, Reading Log, Workout Tracker, and custom mini-apps from declarative JSON manifests with List, Calendar, Streak, Checklist, Heatmap, and Numeric Logger primitives.
 
-## Run
-npm install
-npx expo start
-(scan QR with Expo Go, or press i/a for simulator)
+## Features
+- **Built-in Mini-Apps**:
+  - **Day Planner**: Tasks with date scheduling, day streak, weekly calendar, and heatmap activity.
+  - **Habit Hub**: Habit checklist with per-habit streaks, date-based completion records, and heatmap.
+  - **Reading Log**: Book reading sessions with status tracking and streaks.
+  - **Workout Tracker**: Numeric logger for exercises, reps, weight tracking, and all-time personal bests.
+- **Manifest Engine**: Renders dynamic screens from JSON manifests using pluggable primitive components (`list`, `calendar`, `streak`, `checklist`, `heatmap`, `numeric_logger`).
+- **Mini-App Builder**: 2-step structured wizard creating new custom mini-apps (Task List, Habit Tracker, Numeric Log) with live interactive preview and validation.
+- **Offline Persistence**: Fast in-memory and local storage caching keeping data safe across sessions with zero external database dependencies.
 
-## What's here
-- src/db          SQLite schema, migrations, repositories (record + mini-app)
-- src/domain      entities, repository interfaces, event bus
-- src/runtime     component registry, manifest renderer, hard-coded manifests
-- src/components/primitives  List, Calendar, Streak (P0 per spec §8)
-- src/store       Zustand appStore — seeds both manifests on first boot
-- src/app         expo-router screens (Home, dynamic [appId] screen)
-
-## Not yet built (see spec §21 roadmap)
-Builder UI, sharing/export, Supabase/sync, Timer/Chart/Goal/Table components,
-NumericLogger primitive, Workout Tracker manifest.
-
-## Acceptance check (spec §20, partial)
-1. npx expo start → open app
-2. Tap "Day Planner" → add a task, mark it done → streak increments
-3. Go back, tap "Habit Hub" → same List/Calendar/Streak components, separate data
-4. Kill and reopen the app → data persists (SQLite)
-5. Turn off network → everything above still works
+## Development
+```bash
+npm run dev
+```
+Dev server runs on `http://localhost:3000`.

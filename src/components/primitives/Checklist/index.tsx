@@ -1,5 +1,4 @@
 import React, { useState, useMemo } from "react";
-import { View, Text, Pressable, StyleSheet, TextInput } from "react-native";
 import { z } from "zod";
 import { format } from "date-fns";
 import type { ComponentDefinition, RenderContext, ValidationResult } from "@/types/components";
@@ -9,14 +8,13 @@ import { useUiStore } from "@/store/uiStore";
 import { computeDailyStreak } from "@/lib/dates/streak";
 import { useCollection } from "@/runtime/hooks/useCollection";
 import { findLog, doneDates } from "@/domain/queries/logs";
+import { Check, Plus, Trash2, Flame } from "lucide-react";
 
-// Items (definitions) + logs (one record per item per day, linked by an id
-// field). Each item gets a check for the selected day and its own streak.
 export interface ChecklistConfig {
   itemsCollection: string;
   itemTitleField: string;
   logsCollection: string;
-  logItemField: string; // relation: log -> item id
+  logItemField: string;
   logDateField: string;
   logStatusField: string;
   doneValue?: string;
@@ -39,7 +37,7 @@ function ChecklistView({ appId, config }: { appId: string; config: ChecklistConf
   const selectedKey = useUiStore((s) => s.selectedDate[appId] ?? today);
   const rawItems = useCollection(config.itemsCollection);
   const logs = useCollection(config.logsCollection);
-  const items = useMemo(() => [...rawItems].reverse(), [rawItems]); // oldest first
+  const items = useMemo(() => [...rawItems].reverse(), [rawItems]);
   const [draft, setDraft] = useState("");
 
   const done = config.doneValue ?? "completed";
@@ -66,7 +64,8 @@ function ChecklistView({ appId, config }: { appId: string; config: ChecklistConf
       })
     );
 
-  const addItem = async () => {
+  const addItem = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
     const title = draft.trim();
     if (!title) return;
     await repo.create({ collectionId: config.itemsCollection, data: { [config.itemTitleField]: title } });
@@ -90,48 +89,86 @@ function ChecklistView({ appId, config }: { appId: string; config: ChecklistConf
     }
   };
 
+  const deleteItem = async (e: React.MouseEvent, id: string) => {
+    e.stopPropagation();
+    await repo.delete(id);
+  };
+
   const doneCount = items.filter((it) => isDoneOn(it.id)).length;
 
   return (
-    <View>
-      <View style={styles.addRow}>
-        <TextInput
-          style={styles.input}
+    <div className="bg-white rounded-xl shadow-sm p-4 border border-gray-100">
+      <form onSubmit={addItem} className="flex items-center gap-2 mb-2">
+        <input
+          type="text"
+          className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent"
           placeholder="New habit…"
           value={draft}
-          onChangeText={setDraft}
-          onSubmitEditing={addItem}
-          returnKeyType="done"
+          onChange={(e) => setDraft(e.target.value)}
         />
-        <Pressable style={styles.addBtn} onPress={addItem}>
-          <Text style={styles.addBtnText}>+</Text>
-        </Pressable>
-      </View>
-      <Text style={styles.summary}>
-        {doneCount}/{items.length} done on {selectedKey}
-      </Text>
+        <button
+          type="submit"
+          disabled={!draft.trim()}
+          className="w-9 h-9 rounded-full bg-[#4caf50] hover:bg-green-600 disabled:opacity-50 text-white flex items-center justify-center transition-colors flex-shrink-0"
+          title="Add"
+        >
+          <Plus size={18} />
+        </button>
+      </form>
+
+      <div className="text-xs font-medium text-gray-500 mb-3 px-1">
+        {doneCount}/{items.length} done on <span className="font-semibold text-gray-700">{selectedKey}</span>
+      </div>
+
       {items.length === 0 ? (
-        <Text style={styles.empty}>Nothing yet. Long-press an item to delete it.</Text>
+        <div className="py-8 text-center text-gray-400 text-sm">Nothing yet. Add your first habit above!</div>
       ) : (
-        items.map((item) => {
-          const isDone = isDoneOn(item.id);
-          return (
-            <Pressable
-              key={item.id}
-              style={styles.row}
-              onPress={() => toggle(item)}
-              onLongPress={() => repo.delete(item.id)}
-            >
-              <View style={[styles.checkbox, isDone && styles.checkboxDone]} />
-              <Text style={[styles.title, isDone && styles.titleDone]}>
-                {String(item.data[config.itemTitleField] ?? "")}
-              </Text>
-              <Text style={styles.streak}>{streakFor(item.id)}d</Text>
-            </Pressable>
-          );
-        })
+        <div className="divide-y divide-gray-100">
+          {items.map((item) => {
+            const isDone = isDoneOn(item.id);
+            const streak = streakFor(item.id);
+            return (
+              <div
+                key={item.id}
+                onClick={() => toggle(item)}
+                className="group flex items-center py-2.5 px-1 cursor-pointer hover:bg-gray-50 rounded-lg transition-colors"
+              >
+                <div
+                  className={`w-5 h-5 rounded border flex items-center justify-center mr-3 transition-colors ${
+                    isDone
+                      ? "bg-[#4caf50] border-[#4caf50] text-white"
+                      : "border-gray-400 hover:border-gray-500"
+                  }`}
+                >
+                  {isDone && <Check size={14} strokeWidth={3} />}
+                </div>
+                <span
+                  className={`flex-1 text-sm font-medium ${
+                    isDone ? "line-through text-gray-400" : "text-gray-800"
+                  }`}
+                >
+                  {String(item.data[config.itemTitleField] ?? "")}
+                </span>
+
+                <div className="flex items-center gap-1 text-xs font-bold text-[#4caf50] bg-green-50 px-2 py-0.5 rounded-full mr-2">
+                  <Flame size={12} className="fill-[#4caf50]" />
+                  <span>{streak}d</span>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={(e) => deleteItem(e, item.id)}
+                  className="opacity-0 group-hover:opacity-100 text-gray-400 hover:text-red-500 p-1 transition-opacity"
+                  title="Delete habit"
+                >
+                  <Trash2 size={15} />
+                </button>
+              </div>
+            );
+          })}
+        </div>
       )}
-    </View>
+    </div>
   );
 }
 
@@ -160,18 +197,3 @@ export const ChecklistComponent: ComponentDefinition<ChecklistConfig> = {
     return [];
   },
 };
-
-const styles = StyleSheet.create({
-  addRow: { flexDirection: "row", alignItems: "center", marginBottom: 8 },
-  input: { flex: 1, borderWidth: 1, borderColor: "#ccc", borderRadius: 8, paddingHorizontal: 10, paddingVertical: 8 },
-  addBtn: { marginLeft: 8, width: 36, height: 36, borderRadius: 18, backgroundColor: "#4caf50", alignItems: "center", justifyContent: "center" },
-  addBtnText: { color: "#fff", fontSize: 20, lineHeight: 22 },
-  summary: { color: "#888", marginBottom: 6, fontSize: 13 },
-  row: { flexDirection: "row", alignItems: "center", paddingVertical: 10, paddingHorizontal: 4 },
-  checkbox: { width: 20, height: 20, borderRadius: 4, borderWidth: 2, borderColor: "#888", marginRight: 12 },
-  checkboxDone: { backgroundColor: "#4caf50", borderColor: "#4caf50" },
-  title: { fontSize: 16, flex: 1 },
-  titleDone: { textDecorationLine: "line-through", color: "#999" },
-  streak: { fontSize: 14, fontWeight: "700", color: "#4caf50", marginLeft: 8 },
-  empty: { padding: 16, color: "#999", textAlign: "center" },
-});

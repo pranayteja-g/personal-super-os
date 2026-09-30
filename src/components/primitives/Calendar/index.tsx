@@ -1,5 +1,4 @@
 import React from "react";
-import { View, Text, Pressable, StyleSheet } from "react-native";
 import { z } from "zod";
 import { format, addDays, startOfWeek, parseISO } from "date-fns";
 import type { ComponentDefinition, RenderContext, ValidationResult } from "@/types/components";
@@ -32,31 +31,56 @@ function CalendarView({ appId, config }: { appId: string; config: CalendarConfig
   const week = Array.from({ length: 7 }, (_, i) => addDays(weekStart, i));
 
   return (
-    <View>
-      <View style={styles.week}>
+    <div className="bg-white rounded-xl shadow-sm p-4 border border-gray-100">
+      <div className="flex justify-between items-center py-2">
         {week.map((d) => {
           const k = format(d, "yyyy-MM-dd");
+          const isSelected = k === selectedKey;
+          const isToday = k === today;
           return (
-            <Pressable key={k} onPress={() => setSelectedDate(appId, k)} style={styles.dayCol}>
-              <Text style={styles.dayLabel}>{format(d, "EEE")}</Text>
-              <Text style={[styles.dayNum, k === selectedKey && styles.dayNumActive]}>
+            <button
+              key={k}
+              type="button"
+              onClick={() => setSelectedDate(appId, k)}
+              className={`flex flex-col items-center justify-center w-10 py-1.5 rounded-xl transition-all ${
+                isSelected
+                  ? "bg-[#4caf50] text-white shadow-sm font-bold"
+                  : "text-gray-700 hover:bg-gray-100"
+              }`}
+            >
+              <span className={`text-[10px] uppercase font-medium ${isSelected ? "text-green-100" : "text-gray-400"}`}>
+                {format(d, "EEE")}
+              </span>
+              <span className={`text-sm mt-0.5 ${isSelected ? "text-white" : ""}`}>
                 {format(d, "d")}
-              </Text>
-            </Pressable>
+              </span>
+              {isToday && !isSelected && (
+                <span className="w-1 h-1 bg-[#4caf50] rounded-full mt-0.5" />
+              )}
+            </button>
           );
         })}
-      </View>
-      {showRecords &&
-        (records.length === 0 ? (
-          <Text style={styles.empty}>Nothing on this day</Text>
-        ) : (
-          records.map((item) => (
-            <Text key={item.id} style={styles.item}>
-              {String(item.data.title ?? JSON.stringify(item.data))}
-            </Text>
-          ))
-        ))}
-    </View>
+      </div>
+
+      {showRecords && (
+        <div className="mt-3 pt-3 border-t border-gray-100">
+          <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">
+            Schedule for {selectedKey}
+          </div>
+          {records.length === 0 ? (
+            <div className="py-4 text-center text-gray-400 text-xs">Nothing on this day</div>
+          ) : (
+            <div className="space-y-1.5">
+              {records.map((item) => (
+                <div key={item.id} className="text-xs text-gray-700 bg-gray-50 px-2.5 py-1.5 rounded-lg border border-gray-100">
+                  {String(item.data.title ?? JSON.stringify(item.data))}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -78,13 +102,3 @@ export const CalendarComponent: ComponentDefinition<CalendarConfig> = {
     return [];
   },
 };
-
-const styles = StyleSheet.create({
-  week: { flexDirection: "row", justifyContent: "space-between", paddingVertical: 12 },
-  dayCol: { alignItems: "center", width: 40 },
-  dayLabel: { fontSize: 11, color: "#888" },
-  dayNum: { fontSize: 16, marginTop: 4 },
-  dayNumActive: { fontWeight: "700", color: "#4caf50" },
-  item: { paddingVertical: 6, fontSize: 14, color: "#555" },
-  empty: { padding: 16, color: "#999", textAlign: "center" },
-});

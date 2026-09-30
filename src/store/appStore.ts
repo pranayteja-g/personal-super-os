@@ -11,6 +11,7 @@ interface AppStoreState {
   ready: boolean;
   init: () => Promise<void>;
   refresh: () => Promise<void>;
+  deleteApp: (id: string) => Promise<void>;
 }
 
 const BUILT_INS = [
@@ -48,9 +49,12 @@ export const useAppStore = create<AppStoreState>((set) => ({
     const apps = await sqliteMiniAppRepository.list();
     set({ apps, ready: true });
   },
-  // Call after the Builder saves a new/edited app, so Home picks it up
-  // without reseeding the built-ins.
   refresh: async () => {
+    const apps = await sqliteMiniAppRepository.list();
+    set({ apps });
+  },
+  deleteApp: async (id: string) => {
+    await sqliteMiniAppRepository.delete(id);
     const apps = await sqliteMiniAppRepository.list();
     set({ apps });
   },

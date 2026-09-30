@@ -1,5 +1,4 @@
 import React, { useState, useMemo } from "react";
-import { View, Text, Pressable, StyleSheet, TextInput } from "react-native";
 import { z } from "zod";
 import { format } from "date-fns";
 import type { ComponentDefinition, RenderContext, ValidationResult } from "@/types/components";
@@ -8,6 +7,7 @@ import { sqliteRecordRepository as repo } from "@/db/repositories/recordReposito
 import { useUiStore } from "@/store/uiStore";
 import { useCollection } from "@/runtime/hooks/useCollection";
 import { bestValue } from "@/domain/queries/logs";
+import { Plus, Trash2, Award } from "lucide-react";
 
 export interface NumericLoggerConfig {
   collection: string;
@@ -15,12 +15,12 @@ export interface NumericLoggerConfig {
   valueField: string;
   valueLabel?: string;
   unit?: string;
-  unitField?: string; // store the unit on each record
-  extraFields?: { field: string; label: string }[]; // more number inputs, e.g. reps
-  itemsCollection?: string; // optional picker, e.g. exercises
+  unitField?: string;
+  extraFields?: { field: string; label: string }[];
+  itemsCollection?: string;
   itemTitleField?: string;
-  itemField?: string; // relation on the log record -> item id
-  showBest?: boolean; // max valueField for the selected item, from history
+  itemField?: string;
+  showBest?: boolean;
 }
 
 const ConfigSchema = z
@@ -60,10 +60,18 @@ function LoggerView({ appId, config }: { appId: string; config: NumericLoggerCon
   const hasItems = !!config.itemsCollection;
   const extraFields = config.extraFields ?? [];
 
+  // Auto-select first item if none selected and items exist
+  React.useEffect(() => {
+    if (hasItems && items.length > 0 && !itemId) {
+      setItemId(items[0].id);
+    }
+  }, [hasItems, items, itemId]);
+
   const titleOf = (id: unknown) =>
     String(items.find((i) => i.id === id)?.data[config.itemTitleField ?? "title"] ?? "?");
 
-  const addItem = async () => {
+  const addItem = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
     const t = newItem.trim();
     if (!t || !config.itemsCollection) return;
     const rec = await repo.create({
@@ -76,7 +84,8 @@ function LoggerView({ appId, config }: { appId: string; config: NumericLoggerCon
 
   const canLog = num(value) !== null && (!hasItems || !!itemId);
 
-  const log = async () => {
+  const log = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
     const v = num(value);
     if (v === null || (hasItems && !itemId)) return;
     const data: Record<string, unknown> = {
@@ -112,80 +121,118 @@ function LoggerView({ appId, config }: { appId: string; config: NumericLoggerCon
     return `${head}${v}${u ? " " + u : ""}${ex ? " · " + ex : ""}`;
   };
 
-  return (
-    <View>
-      {hasItems && (
-        <View>
-          <View style={styles.chips}>
-            {items.map((it) => (
-              <Pressable
-                key={it.id}
-                onPress={() => setItemId(it.id)}
-                style={[styles.chip, itemId === it.id && styles.chipOn]}
-              >
-                <Text style={[styles.chipText, itemId === it.id && styles.chipTextOn]}>
-                  {String(it.data[config.itemTitleField ?? "title"] ?? "")}
-                </Text>
-              </Pressable>
-            ))}
-          </View>
-          <View style={styles.row}>
-            <TextInput
-              style={styles.input}
-              placeholder="New item…"
-              value={newItem}
-              onChangeText={setNewItem}
-              onSubmitEditing={addItem}
-              returnKeyType="done"
-            />
-            <Pressable style={styles.btnSmall} onPress={addItem}>
-              <Text style={styles.btnText}>+</Text>
-            </Pressable>
-          </View>
-        </View>
-      )}
+  const deleteLog = async (id: string) => {
+    await repo.delete(id);
+  };
 
-      <View style={styles.row}>
-        <TextInput
-          style={styles.input}
-          placeholder={`${config.valueLabel ?? "Value"}${config.unit ? " (" + config.unit + ")" : ""}`}
-          value={value}
-          onChangeText={setValue}
-          keyboardType="decimal-pad"
-        />
-        {extraFields.map((ef) => (
-          <TextInput
-            key={ef.field}
-            style={styles.input}
-            placeholder={ef.label}
-            value={extras[ef.field] ?? ""}
-            onChangeText={(t) => setExtras((p) => ({ ...p, [ef.field]: t }))}
-            keyboardType="decimal-pad"
-          />
-        ))}
-        <Pressable style={[styles.btn, !canLog && styles.btnOff]} onPress={log} disabled={!canLog}>
-          <Text style={styles.btnText}>Log</Text>
-        </Pressable>
-      </View>
+  return (
+    <div className="bg-white rounded-xl shadow-sm p-4 border border-gray-100">
+      {hasItems && (
+        <div className="mb-4">
+          <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">
+            Select {config.itemTitleField ?? "Exercise"}
+          </div>
+          <div className="flex flex-wrap gap-1.5 mb-2.5">
+            {items.map((it) => {
+              const isSelected = itemId === it.id;
+              return (
+                <button
+                  key={it.id}
+                  type="button"
+                  onClick={() => setItemId(it.id)}
+                  className={`px-3 py-1.5 rounded-full text-xs font-medium transition-all ${
+                    isSelected
+                      ? "bg-[#4caf50] text-white shadow-sm font-semibold"
+                      : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+                  }`}
+                >
+                  {String(it.data[config.itemTitleField ?? "title"] ?? "")}
+                </button>
+              );
+            })}
+          </div>
+          <form onSubmit={addItem} className="flex gap-2">
+            <input
+              type="text"
+              className="flex-1 border border-gray-300 rounded-lg px-3 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-green-500"
+              placeholder={`Add new ${config.itemTitleField ?? "item"}…`}
+              value={newItem}
+              onChange={(e) => setNewItem(e.target.value)}
+            />
+            <button
+              type="submit"
+              disabled={!newItem.trim()}
+              className="px-3 py-1.5 rounded-lg bg-gray-200 hover:bg-gray-300 disabled:opacity-40 text-xs font-medium flex items-center gap-1 text-gray-700"
+            >
+              <Plus size={14} /> Add
+            </button>
+          </form>
+        </div>
+      )}
 
       {best !== null && (
-        <Text style={styles.best}>
-          Best: {best}
-          {config.unit ? " " + config.unit : ""}
-        </Text>
+        <div className="flex items-center gap-1.5 bg-green-50 border border-green-200 px-3 py-2 rounded-lg text-xs font-semibold text-green-800 mb-3">
+          <Award size={16} className="text-[#4caf50]" />
+          <span>
+            Personal Best: {best} {config.unit ?? ""}
+          </span>
+        </div>
       )}
 
-      {todays.length === 0 ? (
-        <Text style={styles.empty}>Nothing logged on {selectedKey}</Text>
-      ) : (
-        todays.map((l) => (
-          <Pressable key={l.id} onLongPress={() => repo.delete(l.id)} style={styles.entry}>
-            <Text style={styles.entryText}>{fmt(l)}</Text>
-          </Pressable>
-        ))
-      )}
-      {todays.length > 0 && <Text style={styles.hint}>Long-press an entry to delete</Text>}
-    </View>
+      <form onSubmit={log} className="flex flex-wrap items-center gap-2 mb-4">
+        <input
+          type="number"
+          step="any"
+          className="flex-1 min-w-[100px] border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-500"
+          placeholder={`${config.valueLabel ?? "Value"}${config.unit ? " (" + config.unit + ")" : ""}`}
+          value={value}
+          onChange={(e) => setValue(e.target.value)}
+        />
+        {extraFields.map((ef) => (
+          <input
+            key={ef.field}
+            type="number"
+            step="any"
+            className="w-24 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-500"
+            placeholder={ef.label}
+            value={extras[ef.field] ?? ""}
+            onChange={(e) => setExtras((p) => ({ ...p, [ef.field]: e.target.value }))}
+          />
+        ))}
+        <button
+          type="submit"
+          disabled={!canLog}
+          className="bg-[#4caf50] hover:bg-green-600 disabled:opacity-50 text-white font-semibold text-sm px-4 py-2 rounded-lg transition-colors"
+        >
+          Log
+        </button>
+      </form>
+
+      <div className="border-t border-gray-100 pt-3">
+        <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">
+          Logged on {selectedKey}
+        </div>
+        {todays.length === 0 ? (
+          <div className="py-6 text-center text-gray-400 text-xs">Nothing logged on this day</div>
+        ) : (
+          <div className="divide-y divide-gray-100">
+            {todays.map((l) => (
+              <div key={l.id} className="group flex items-center justify-between py-2 text-sm">
+                <span className="text-gray-800 font-medium">{fmt(l)}</span>
+                <button
+                  type="button"
+                  onClick={() => deleteLog(l.id)}
+                  className="opacity-0 group-hover:opacity-100 text-gray-400 hover:text-red-500 p-1 transition-opacity"
+                  title="Delete log entry"
+                >
+                  <Trash2 size={14} />
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
   );
 }
 
@@ -209,22 +256,3 @@ export const NumericLoggerComponent: ComponentDefinition<NumericLoggerConfig> = 
     return [];
   },
 };
-
-const styles = StyleSheet.create({
-  row: { flexDirection: "row", alignItems: "center", marginBottom: 8 },
-  input: { flex: 1, borderWidth: 1, borderColor: "#ccc", borderRadius: 8, paddingHorizontal: 10, paddingVertical: 8, marginRight: 6 },
-  btn: { paddingHorizontal: 14, height: 38, borderRadius: 8, backgroundColor: "#4caf50", alignItems: "center", justifyContent: "center" },
-  btnSmall: { width: 36, height: 36, borderRadius: 18, backgroundColor: "#4caf50", alignItems: "center", justifyContent: "center" },
-  btnOff: { backgroundColor: "#bbb" },
-  btnText: { color: "#fff", fontWeight: "700", fontSize: 16 },
-  chips: { flexDirection: "row", flexWrap: "wrap", marginBottom: 8 },
-  chip: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 16, borderWidth: 1, borderColor: "#ccc", marginRight: 6, marginBottom: 6 },
-  chipOn: { backgroundColor: "#4caf50", borderColor: "#4caf50" },
-  chipText: { color: "#555" },
-  chipTextOn: { color: "#fff", fontWeight: "600" },
-  best: { fontWeight: "700", color: "#4caf50", marginBottom: 6 },
-  entry: { paddingVertical: 8, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: "#ddd" },
-  entryText: { fontSize: 15 },
-  empty: { padding: 12, color: "#999", textAlign: "center" },
-  hint: { color: "#aaa", fontSize: 11, marginTop: 6, textAlign: "center" },
-});

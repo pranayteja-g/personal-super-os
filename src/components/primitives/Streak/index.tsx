@@ -1,10 +1,10 @@
 import React from "react";
-import { View, Text, StyleSheet } from "react-native";
 import { z } from "zod";
 import { parseISO } from "date-fns";
 import type { ComponentDefinition, RenderContext, ValidationResult } from "@/types/components";
 import { useCollection } from "@/runtime/hooks/useCollection";
 import { computeDailyStreak } from "@/lib/dates/streak";
+import { Flame } from "lucide-react";
 
 export interface StreakConfig {
   collection: string;
@@ -32,10 +32,15 @@ function StreakView({ config }: { config: StreakConfig }) {
   const streak = computeDailyStreak(dates);
 
   return (
-    <View style={styles.wrap}>
-      <Text style={styles.count}>{streak}</Text>
-      <Text style={styles.label}>day streak</Text>
-    </View>
+    <div className="bg-white rounded-xl shadow-sm p-5 border border-gray-100 flex flex-col items-center justify-center text-center">
+      <div className="flex items-center gap-1.5 text-amber-500 mb-1">
+        <Flame size={24} className="fill-amber-500 text-amber-500 animate-pulse" />
+      </div>
+      <div className="text-4xl font-extrabold text-gray-900 tracking-tight">{streak}</div>
+      <div className="text-xs font-medium text-gray-500 uppercase tracking-wider mt-1">
+        day streak
+      </div>
+    </div>
   );
 }
 
@@ -57,9 +62,3 @@ export const StreakComponent: ComponentDefinition<StreakConfig> = {
     return [];
   },
 };
-
-const styles = StyleSheet.create({
-  wrap: { alignItems: "center", padding: 16 },
-  count: { fontSize: 40, fontWeight: "700" },
-  label: { fontSize: 14, color: "#888" },
-});
